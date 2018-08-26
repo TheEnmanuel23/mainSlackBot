@@ -16,23 +16,46 @@ const ChildBot = require('../../db/models/ChildBot');
 * @returns {object}
 */
 module.exports = (user, channel, text = '', command = {}, botToken = null, callback) => {
+  console.log(botToken)
   mongoose.connect(process.env.MONGO_URI, (err, db) => {
-    rp.post({
-      uri: 'https://slack.com/api/chat.postMessage',
-      form: {
-        token: 'xoxb-422439424144-424671930310-VbvpPNDbqRZ6r21TJrf7Btt7',
-        channel: 'general',
-        text: text,
-        as_user: false,
-        response_type: 'in_channel'
-      }
-    })
-    .then(res => {
-      callback(null, {
-        text: `Great! You have an added workspace, now you can link ${text} to other workspaces and send messages.`,
+    MainBot.findOne({ token: botToken }, (err, mainBot) => {
+      sendMessageToRegisteredWorkspace(mainBot.workspace, text).then(allMessagesToSend => {
+        Promise.all(allMessagesToSend).then(res => {
+          callback(null, {
+            text: `You send message from: ${mainBot.workspace}`,
+          });
+        }).catch(err => {
+          console.error(err);
+        })
       });
-    }).catch(err => {
-      console.error(err)
-    })
+    });
   });
 };
+
+const sendMessageToRegisteredWorkspace = (workspaceName, text) => {
+  return new Promise((res, rej) => {
+    ChildBot.find({mainWorkspace: workspaceName}, (err, childBots) => {
+      let allMessagesToSend = [];
+
+      childBots.map(child => {
+        let callback = sendMessage(text, child.channel, child.token);
+        allMessagesToSend.push(callback);
+      });
+
+      res(allMessagesToSend);
+    });
+  }); 
+};
+
+const sendMessage = (text, channel, token) => {
+  return rp.post({
+    uri: 'https://slack.com/api/chat.postMessage',
+    form: {
+      token: token,
+      channel: channel,
+      text: text,
+      as_user: false,
+      response_type: 'in_channel'
+    }
+  });
+}
